@@ -1,0 +1,8 @@
+{
+  "manifest_version": 3,
+  "name": "Account Forge — Sign-up Assistant",
+  "version": "1.0.0",
+  "description": "Generate credentials and fill registration forms on your current tab.",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "action": { "default_title": "Account Forge", "default_popup": "popup.html" }
+}
