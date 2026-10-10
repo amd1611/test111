@@ -17,6 +17,27 @@ function password(n=20) {
   return values.join("");
 }
 function makeCredentials() { return {username:"forge-"+rand(9),password:password()}; }
+
+const PROFILE_FIELDS = ["name","age","firstName","lastName","birthDate","phone","country"];
+function readProfile() {
+  return {
+    displayName: $("#name").value.trim(),
+    age: $("#age").value.trim(),
+    firstName: $("#firstName").value.trim(),
+    lastName: $("#lastName").value.trim(),
+    birthDate: $("#birthDate").value.trim(),
+    phone: $("#phone").value.trim(),
+    country: $("#country").value.trim()
+  };
+}
+function applyProfile(profile = {}) {
+  $("#name").value = profile.displayName || "";
+  for (const key of PROFILE_FIELDS.slice(1)) {
+    const field = $("#"+key);
+    if (field && typeof profile[key] === "string") field.value = profile[key];
+  }
+}
+async function saveProfile() { await chrome.storage.local.set({signupProfile:readProfile()}); }
 function status(title,message) { $("#status").hidden=false; $("#statusTitle").textContent=title; $("#statusMessage").textContent=message; }
 function preview() {
   const c=state.credentials;
@@ -150,7 +171,7 @@ async function create() {
   try {
     await chrome.storage.local.set({draftCredentials:state.credentials});
     await chrome.scripting.executeScript({target:{tabId:state.tab.id},files:["content.js"]});
-    const result=await chrome.tabs.sendMessage(state.tab.id,{type:"ACCOUNT_FORGE_FILL",credentials:{...state.credentials,email:record.email,displayName:record.displayName},autoSubmit:$("#autoSubmit").checked});
+    const profile={...readProfile(),displayName:record.displayName,email:record.email};await chrome.storage.local.set({signupProfile:readProfile()});const result=await chrome.tabs.sendMessage(state.tab.id,{type:"ACCOUNT_FORGE_FILL",credentials:{...state.credentials,email:record.email,displayName:record.displayName,profile},autoSubmit:$("#autoSubmit").checked});
     if(!result?.ok)throw new Error(result?.error||"Could not detect an editable form.");
     const filledMatch=(result.message||"").match(/^Filled (.*?)\./);const filled=filledMatch?filledMatch[1].split(", "):[];
     if(filled.includes("password")) {
@@ -174,11 +195,17 @@ $("#copyPass").addEventListener("click",()=>copy(state.credentials?.password||""
 $("#export").addEventListener("click",async()=>{const blob=new Blob([JSON.stringify(await accounts(),null,2)],{type:"application/json"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="account-forge-export-"+new Date().toISOString().slice(0,10)+".json";a.click();URL.revokeObjectURL(url);});
 $("#clear").addEventListener("click",async()=>{if(confirm("Delete all saved account records? This cannot be undone.")){await chrome.storage.local.set({accounts:[]});await renderAccounts();status("Account list cleared","Saved account records were removed.");}});
 async function initialize() {
-  const saved=await chrome.storage.local.get({draftCredentials:null,temporaryMailbox:null});
+  const saved=await chrome.storage.local.get({draftCredentials:null,temporaryMailbox:null,signupProfile:{}});
+  applyProfile(saved.signupProfile||{});
   state.credentials=saved.draftCredentials?.username&&saved.draftCredentials?.password?saved.draftCredentials:makeCredentials();
   await chrome.storage.local.set({draftCredentials:state.credentials});
   preview();
   await Promise.all([currentTab(),renderAccounts()]);
   if(saved.temporaryMailbox){state.mailbox=saved.temporaryMailbox;$("#mailboxAddress").textContent=state.mailbox.address;$("#mailboxCurrent").hidden=false;if(!$("#email").value)$("#email").value=state.mailbox.address;await refreshInbox(false);}
+}
+for (const id of PROFILE_FIELDS) {
+  const field = $("#"+id);
+  field.addEventListener("input", () => { saveProfile().catch(() => {}); });
+  field.addEventListener("change", () => { saveProfile().catch(() => {}); });
 }
 initialize();
