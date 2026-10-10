@@ -213,8 +213,6 @@ async function create() {
 $("#refresh").addEventListener("click",currentTab);
 $("#create").addEventListener("click",create);
 $("#fillPageButton").addEventListener("click",fillPageOnly);
-$("#saveSmsBridge").addEventListener("click",saveSmsBridge);
-$("#refreshSmsInbox").addEventListener("click",refreshSmsInbox);
 $("#createMailbox").addEventListener("click",createMailbox);
 $("#copyMailbox").addEventListener("click",()=>copy(state.mailbox?.address||""));
 $("#refreshInbox").addEventListener("click",()=>refreshInbox(true));
@@ -318,9 +316,6 @@ async function initialize() {
   preview();
   await Promise.all([currentTab(),renderAccounts()]);
   if(saved.temporaryMailbox){state.mailbox=saved.temporaryMailbox;$("#mailboxAddress").textContent=state.mailbox.address;$("#mailboxCurrent").hidden=false;if(!$("#email").value)$("#email").value=state.mailbox.address;await refreshInbox(false);}
-  const smsSaved=await chrome.storage.local.get({smsBridgeConfig:null});
-  if(smsSaved.smsBridgeConfig){$("#smsBridgeUrl").value=smsSaved.smsBridgeConfig.url||"";$("#smsReadToken").value=smsSaved.smsBridgeConfig.token||"";await refreshSmsInbox();setInterval(()=>{if(!state.smsBusy)refreshSmsInbox();},15000);}
-  else renderSmsMessages([]);
 }
 for (const id of PROFILE_FIELDS) {
   const field = $("#"+id);
