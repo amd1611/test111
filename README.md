@@ -1,43 +1,45 @@
 # Account Forge — Sign-up Assistant
 
-A Chrome Extension Manifest V3 starter that generates fresh credentials, fills likely registration fields on the currently active website, and keeps an account list locally in the browser.
+Chrome Extension Manifest V3 project that generates credentials, fills common registration fields, and can create and read a temporary Mail.tm inbox inside the extension.
 
 ## Install
-
-1. Download the repository as a ZIP (Code → Download ZIP) and extract it.
+1. Download this repository as a ZIP and extract it.
 2. Open `chrome://extensions` in Chrome.
 3. Enable **Developer mode**.
-4. Choose **Load unpacked**.
-5. Select the extracted folder containing `manifest.json`.
-6. Open a site's sign-up page and click the Account Forge toolbar icon.
-7. Optionally enter an email address you control and a name, then click **Create account on this site**.
+4. Click **Load unpacked** and choose the folder containing `manifest.json`.
+5. Open a registration page and click the Account Forge toolbar icon.
+6. Click **Create temporary inbox** to generate an address. It is inserted into the email field in the extension; then click **Create account on this site** to fill the page.
+7. Reopen the extension and use **Refresh inbox** to check for incoming mail. Click **Read email** to view a message; the extension may show a button to copy a likely verification code.
 
 ## Features
+- Browser-cryptographic random usernames and strong passwords.
+- Best-effort detection and filling of email, username, name, password, and confirmation fields.
+- Optional one-time submit only on a clearly detected registration form and when no visible security challenge is found.
+- Temporary inbox creation, message reading, manual refresh, and copyable likely verification codes via the official Mail.tm API.
+- Local account history, copy controls, JSON export and deletion.
+- Sign-up drafts keep the same generated credentials between multi-step form screens.
 
-- Random username and strong password generation using the browser's cryptographic random generator.
-- Best-effort detection and filling of common email, username, name, password, and confirm-password fields.
-- Optional one-time submit only when a page looks clearly like a sign-up form and an identifiable submit button exists.
-- Local account history with credential-copy buttons, JSON export, status marking, and deletion.
-- No external network calls, telemetry, remote scripts, or third-party dependencies.
+## Temporary email and limitations
+- The temporary mailbox feature uses `https://api.mail.tm`. Mail.tm receives the mailbox address and incoming emails. The extension stores the mailbox password/token and saved website credentials in Chrome's local extension storage so you can reopen the inbox.
+- Temporary inboxes are not durable recovery addresses. Messages/accounts may expire or become unavailable; do not use these for important personal, work, financial, purchase, or recovery-dependent accounts.
+- Some services reject disposable email domains. Canva may reject Mail.tm addresses. If it does, use an email address or alias you control that the service permits. The extension does not bypass such restrictions.
+- Use this for occasional, user-initiated account creation you are permitted to perform, not bulk account creation. Follow each website's rules.
+- CAPTCHA, email/phone checks, and other security measures are not bypassed. Complete required verification yourself.
+- Form detection is best-effort and won't work on every website or every multi-step/cross-origin form.
 
-## Limitations and safety
-
-- No generic browser extension can guarantee account creation on every website. Custom frontends, cross-origin frames, and site-specific signup flows may not be detectable.
-- This extension does not create email inboxes or aliases. Use an email address you own.
-- CAPTCHA, email/phone verification, one-time codes, and security checks are not bypassed; complete them yourself.
-- Some websites prohibit multiple accounts or automated registration. Follow each website's rules and use this for accounts you are permitted to create, one at a time.
-- Saved passwords are stored in `chrome.storage.local`, which is local extension storage **but not an encrypted password vault**. Treat exports as sensitive and consider using a dedicated password manager for important credentials.
-- The local “complete” status is only a personal note, not proof that the website accepted registration. Confirm success on the actual website.
+## Privacy and security
+- No analytics or tracking is included. Mail.tm API calls happen only when creating a mailbox, refreshing the inbox, or opening a message.
+- `chrome.storage.local` is not an encrypted password vault. Anyone with access to the browser profile or a malicious extension may be able to read stored credentials and inbox access data. Avoid sensitive accounts and do not export secrets to shared locations.
+- Email messages may contain phishing attempts. Review senders and URLs carefully before acting on messages. Message bodies are displayed as text rather than executed as HTML.
 
 ## Permissions
+- `activeTab`: interact with the active page after your click.
+- `scripting`: inject the registration helper after your click.
+- `storage`: save account records, drafts, and inbox access data locally.
+- `host_permissions` for `https://api.mail.tm/*`: create temporary inboxes and retrieve messages.
 
-- `activeTab`: lets the extension work on the active website after you click it.
-- `scripting`: injects the form helper after your click.
-- `storage`: saves the account list locally.
-
-## Project files
-
-- `manifest.json`: extension metadata and limited permissions.
-- `popup.html`: extension interface and styles.
-- `popup.js`: credential generator, form workflow, and account list.
-- `content.js`: sign-up field detection and fill/submit logic.
+## Files
+- `manifest.json`: extension metadata and permissions.
+- `popup.html`: UI.
+- `popup.js`: credentials, account history, temporary mailbox API and inbox view.
+- `content.js`: registration form detection and fill/optional submit logic.
