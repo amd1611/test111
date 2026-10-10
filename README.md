@@ -13,7 +13,8 @@ Chrome Extension Manifest V3 project that generates credentials, fills common re
 
 ## Features
 - Browser-cryptographic random usernames and strong passwords.
-- Best-effort detection and filling of email, username, name, password, and confirmation fields.
+- Best-effort detection and filling of email, username, full name, first/last name, age, date of birth, phone, country/region, password, and confirmation fields, using only profile values you manually enter.
+- Reusable sign-up profile fields are saved locally in the extension so you can use them on later forms without retyping.
 - Optional one-time submit only on a clearly detected registration form and when no visible security challenge is found.
 - Temporary inbox creation, message reading, manual refresh, and copyable likely verification codes via the official Mail.tm API.
 - Local account history, copy controls, JSON export and deletion.
@@ -24,7 +25,8 @@ Chrome Extension Manifest V3 project that generates credentials, fills common re
 - Temporary inboxes are not durable recovery addresses. Messages/accounts may expire or become unavailable; do not use these for important personal, work, financial, purchase, or recovery-dependent accounts.
 - Some services reject disposable email domains. Canva may reject Mail.tm addresses. If it does, use an email address or alias you control that the service permits. The extension does not bypass such restrictions.
 - Use this for occasional, user-initiated account creation you are permitted to perform, not bulk account creation. Follow each website's rules.
-- CAPTCHA, email/phone checks, and other security measures are not bypassed. Complete required verification yourself.
+- CAPTCHA, email/phone checks, terms and consent checkboxes, and other security measures are not bypassed or automatically accepted. Review those steps yourself.
+- Name, age, birthday, phone, and country/region details you enter are stored in Chrome local extension storage for reuse. This storage is not encrypted; avoid entering details you do not want saved in this browser profile.
 - Form detection is best-effort and won't work on every website or every multi-step/cross-origin form.
 
 ## Privacy and security
