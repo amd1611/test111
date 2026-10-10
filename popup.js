@@ -222,6 +222,94 @@ $("#copyUser").addEventListener("click",()=>copy(state.credentials?.username||""
 $("#copyPass").addEventListener("click",()=>copy(state.credentials?.password||""));
 $("#export").addEventListener("click",async()=>{const blob=new Blob([JSON.stringify(await accounts(),null,2)],{type:"application/json"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="account-forge-export-"+new Date().toISOString().slice(0,10)+".json";a.click();URL.revokeObjectURL(url);});
 $("#clear").addEventListener("click",async()=>{if(confirm("Delete all saved account records? This cannot be undone.")){await chrome.storage.local.set({accounts:[]});await renderAccounts();status("Account list cleared","Saved account records were removed.");}});
+
+function normalizedText(value){
+  return String(value||"").normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
+}
+const SMS_STOP_WORDS=new Set(["www","com","net","org","co","uk","io","ai","app","accounts","account","auth","login","signin","signup","register","registration","secure","identity","home","welcome","official","the","and","for","your","are","how","old"]);
+const SMS_ALIASES={chatgpt:["openai"],openai:["chatgpt"],gmail:["google"],google:["gmail"],outlook:["microsoft"],microsoft:["outlook","live"],instagram:["meta"],facebook:["meta"],meta:["instagram","facebook"],twitter:["x"],amazon:["aws"],aws:["amazon"]};
+function siteKeywords(){
+  const url=state.tab?.url||"",title=state.tab?.title||"";
+  let host="";try{host=new URL(url).hostname;}catch{}
+  const tokens=host.split(".").flatMap((part)=>part.split(/[-_]/)).concat(normalizedText(title).split(/\s+/))
+    .map(normalizedText).filter((word)=>word.length>=3&&!SMS_STOP_WORDS.has(word));
+  const words=new Set(tokens);for(const word of [...words])for(const alias of (SMS_ALIASES[word]||[]))words.add(alias);
+  return {host,words:[...words]};
+}
+function smsTimestamp(message){
+  const raw=message.receivedAt||message.timestamp||message.createdAt||message.date||message.received_at;
+  const stamp=typeof raw==="number"?(raw<1e12?raw*1000:raw):Date.parse(raw||"");
+  return Number.isFinite(stamp)?stamp:0;
+}
+function smsCode(message){
+  const body=String(message.body||message.message||message.text||"");
+  const codes=body.match(/(?<!\d)\d{4,8}(?!\d)/g)||[];
+  if(!codes.length)return "";
+  const hasSignal=/verification|verify|security|sign.?in|login|one.?time|\botp\b|passcode|authentication|auth code|confirmation|confirm your|use this code|your code/i.test(body);
+  return hasSignal?codes[0]:(codes.find((code)=>code.length>=5)||codes[0]);
+}
+function filterRelevantSms(messages){
+  const site=siteKeywords(),now=Date.now();
+  return messages.map((message)=>{
+    const receivedAt=smsTimestamp(message),body=String(message.body||message.message||message.text||"");
+    const sender=String(message.senderName||message.fromName||message.from||message.sender||message.source||"Unknown sender");
+    const searchable=" "+normalizedText(sender+" "+body)+" ";
+    const matchedKeyword=site.words.find((word)=>searchable.includes(" "+word+" "));
+    return {...message,receivedAt,body,sender,code:smsCode(message),matchedKeyword};
+  }).filter((message)=>{
+    const age=now-message.receivedAt;
+    return message.code&&message.receivedAt>0&&age>=-60000&&age<=SMS_WINDOW_MS&&message.matchedKeyword;
+  }).sort((a,b)=>b.receivedAt-a.receivedAt).slice(0,8);
+}
+function smsStatus(message,isError=false){
+  const node=$("#smsConnectionStatus");node.textContent=message;node.style.color=isError?"#ff8b91":"#a4b2c9";
+}
+function renderSmsMessages(messages){
+  const list=$("#smsMessages");list.replaceChildren();
+  if(!messages.length){const empty=document.createElement("div");empty.className="emptyInbox";empty.textContent="No matching code SMS from this site in the last 5 minutes.";list.append(empty);return;}
+  for(const message of messages){
+    const card=document.createElement("article");card.className="sms-message";
+    const top=document.createElement("div");top.className="sms-message-top";
+    const sender=document.createElement("div");sender.className="sms-sender";sender.textContent=message.sender;
+    const date=document.createElement("div");date.className="sms-time";date.textContent=new Date(message.receivedAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",second:"2-digit"});
+    top.append(sender,date);
+    const matched=document.createElement("div");matched.className="sms-site-match";matched.textContent="Matched current site: "+message.matchedKeyword;
+    const body=document.createElement("div");body.className="sms-body";body.textContent=message.body.slice(0,360);
+    const code=document.createElement("div");code.className="sms-code";code.textContent=message.code;
+    const actions=document.createElement("div");actions.className="sms-actions";
+    const copyButton=document.createElement("button");copyButton.textContent="Copy code";copyButton.addEventListener("click",()=>copy(message.code));
+    actions.append(copyButton);card.append(top,matched,body,code,actions);list.append(card);
+  }
+}
+async function saveSmsBridge(){
+  const raw=$("#smsBridgeUrl").value.trim(),token=$("#smsReadToken").value.trim();let url;
+  try{url=new URL(raw);}catch{smsStatus("Enter a valid bridge URL.",true);return;}
+  const localHttp=url.protocol==="http:"&&["localhost","127.0.0.1"].includes(url.hostname);
+  if(url.protocol!=="https:"&&!localHttp){smsStatus("Use HTTPS except for localhost testing.",true);return;}
+  if(!token){smsStatus("Enter the private SMS_READ_TOKEN from your bridge.",true);return;}
+  const granted=await chrome.permissions.request({origins:[url.origin+"/*"]});
+  if(!granted){smsStatus("Chrome did not grant permission to this bridge origin.",true);return;}
+  const config={url:url.origin,token};await chrome.storage.local.set({smsBridgeConfig:config});
+  smsStatus("Bridge saved. Checking recent messages…");await refreshSmsInbox();
+}
+async function refreshSmsInbox(){
+  if(state.smsBusy)return;
+  state.smsBusy=true;const button=$("#refreshSmsInbox");button.disabled=true;button.textContent="Checking SMS…";
+  try{
+    await currentTab();
+    const saved=await chrome.storage.local.get({smsBridgeConfig:null}),config=saved.smsBridgeConfig;
+    if(!config?.url||!config?.token){smsStatus("Not connected — configure your private bridge below.",true);renderSmsMessages([]);return;}
+    const url=new URL("/api/messages",config.url);url.searchParams.set("since",new Date(Date.now()-SMS_WINDOW_MS).toISOString());
+    const response=await fetch(url.href,{headers:{Authorization:"Bearer "+config.token,Accept:"application/json"}});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(data.error||data.message||("SMS bridge returned HTTP "+response.status));
+    const messages=Array.isArray(data)?data:(Array.isArray(data.messages)?data.messages:[]);
+    const matched=filterRelevantSms(messages);state.smsMessages=matched;renderSmsMessages(matched);
+    smsStatus("Connected · "+matched.length+" matching code message(s) for "+(siteKeywords().host||"this page")+" in the last 5 minutes.");
+  }catch(error){renderSmsMessages([]);smsStatus(String(error?.message||error),true);}
+  finally{state.smsBusy=false;button.disabled=false;button.textContent="↻ Refresh SMS";}
+}
+
 async function initialize() {
   const saved=await chrome.storage.local.get({draftCredentials:null,temporaryMailbox:null,signupProfile:{}});
   applyProfile(saved.signupProfile||{});
