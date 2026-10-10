@@ -1,6 +1,7 @@
 const $ = (s) => document.querySelector(s);
 const API = "https://api.mail.tm";
-const state = {tab:null, credentials:null, busy:false, mailbox:null};
+const state = {tab:null, credentials:null, busy:false, fillBusy:false, smsBusy:false, mailbox:null, smsMessages:[]};
+const SMS_WINDOW_MS = 5 * 60 * 1000;
 
 function rand(n=10) {
   const chars = "abcdefghjkmnpqrstuvwxyz23456789";
@@ -163,6 +164,30 @@ async function renderAccounts() {
     card.append(host,detail,stateText,userBtn,passBtn,complete);$("#accounts").append(card);
   }
 }
+async function fillPageOnly() {
+  if(state.fillBusy)return;
+  await currentTab();
+  if(!state.tab?.id||!/^https?:/i.test(state.tab.url||"")){status("No supported page","Open the website form first, then try Fill page only.");return;}
+  state.fillBusy=true;
+  const button=document.querySelector("#fillPageButton");button.disabled=true;button.textContent="Filling fields…";
+  try{
+    if(!state.credentials)state.credentials=makeCredentials();
+    preview();
+    const old=await chrome.storage.local.get({draftAccount:null});
+    const profile={...readProfile(),email:$("#email").value.trim()||state.mailbox?.address||""};
+    await chrome.storage.local.set({draftCredentials:state.credentials,signupProfile:readProfile()});
+    await chrome.scripting.executeScript({target:{tabId:state.tab.id},files:["content.js"]});
+    const result=await chrome.tabs.sendMessage(state.tab.id,{type:"ACCOUNT_FORGE_FILL",credentials:{...state.credentials,email:profile.email,displayName:profile.displayName,profile},autoSubmit:false});
+    if(!result?.ok)throw new Error(result?.error||"The page did not respond.");
+    const filled=Array.isArray(result.filledFields)?result.filledFields:[];
+    if(!filled.length){status("No matching fields",result.message||"No recognizable fields were found.");return;}
+    const draft={id:old.draftAccount?.id||crypto.randomUUID(),url:state.tab.url,host:new URL(state.tab.url).hostname,email:profile.email,displayName:profile.displayName,username:state.credentials.username,password:state.credentials.password,createdAt:old.draftAccount?.createdAt||new Date().toISOString(),status:"signup in progress"};
+    await chrome.storage.local.set({draftAccount:draft,draftCredentials:state.credentials});
+    status("Page filled — not submitted",result.message+" Nothing was submitted. Review the fields and continue manually.");
+  }catch(error){status("Could not fill this page",String(error?.message||error)+". Copy the values and enter them manually if necessary.");}
+  finally{state.fillBusy=false;button.disabled=false;button.textContent="▣  Fill page only — don’t submit";}
+}
+
 async function create() {
   if(state.busy||!state.tab?.id||!state.credentials)return;
   state.busy=true;$("#create").disabled=true;
@@ -187,6 +212,9 @@ async function create() {
 }
 $("#refresh").addEventListener("click",currentTab);
 $("#create").addEventListener("click",create);
+$("#fillPageButton").addEventListener("click",fillPageOnly);
+$("#saveSmsBridge").addEventListener("click",saveSmsBridge);
+$("#refreshSmsInbox").addEventListener("click",refreshSmsInbox);
 $("#createMailbox").addEventListener("click",createMailbox);
 $("#copyMailbox").addEventListener("click",()=>copy(state.mailbox?.address||""));
 $("#refreshInbox").addEventListener("click",()=>refreshInbox(true));
@@ -202,6 +230,9 @@ async function initialize() {
   preview();
   await Promise.all([currentTab(),renderAccounts()]);
   if(saved.temporaryMailbox){state.mailbox=saved.temporaryMailbox;$("#mailboxAddress").textContent=state.mailbox.address;$("#mailboxCurrent").hidden=false;if(!$("#email").value)$("#email").value=state.mailbox.address;await refreshInbox(false);}
+  const smsSaved=await chrome.storage.local.get({smsBridgeConfig:null});
+  if(smsSaved.smsBridgeConfig){$("#smsBridgeUrl").value=smsSaved.smsBridgeConfig.url||"";$("#smsReadToken").value=smsSaved.smsBridgeConfig.token||"";await refreshSmsInbox();setInterval(()=>{if(!state.smsBusy)refreshSmsInbox();},15000);}
+  else renderSmsMessages([]);
 }
 for (const id of PROFILE_FIELDS) {
   const field = $("#"+id);
