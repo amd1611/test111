@@ -74,7 +74,7 @@ async function createMailbox() {
   } catch(error) { status("Could not create inbox",String(error?.message||error)); }
   finally { button.disabled=false; button.textContent="＋ Create another temporary inbox"; }
 }
-function renderMessageBody(card, message, text) {
+function renderMessageBody(card, message, text, links=[]) {
   let body=card.querySelector(".mailBody");
   if(!body){body=document.createElement("p");body.className="mailBody";card.append(body);}
   body.textContent=String(text||message.intro||"No readable text in this email.").slice(0,7000);
@@ -83,16 +83,17 @@ function renderMessageBody(card, message, text) {
     const codeBtn=document.createElement("button"); codeBtn.className="codeButton";codeBtn.textContent="Copy possible code: "+match[0];
     codeBtn.addEventListener("click",()=>copy(match[0]));card.append(codeBtn);
   }
+  for (const href of [...new Set(links)].slice(0,5)) { try { const u=new URL(href); if(!["http:","https:"].includes(u.protocol))continue; const b=document.createElement("button");b.className="mailLinkButton";b.textContent="Open email link: "+u.hostname;b.addEventListener("click",()=>chrome.tabs.create({url:u.href}));card.append(b); } catch {} }
 }
 async function openMessage(message,card,button) {
   button.disabled=true;button.textContent="Loading…";
   try {
     const full=await authApi(state.mailbox,"/messages/"+encodeURIComponent(message.id));
-    let body=full.text||"";
-    if(!body&&Array.isArray(full.html)) body=full.html.map(part=>new DOMParser().parseFromString(String(part),"text/html").body.textContent||"").join("\n");
-    renderMessageBody(card,message,body||full.intro||"No readable text in this email.");
+    let body=full.text||"";const links=[];
+    if(Array.isArray(full.html)){const parser=new DOMParser();const docs=full.html.map(part=>parser.parseFromString(String(part),"text/html"));if(!body)body=docs.map(doc=>doc.body.textContent||"").join("\n");for(const doc of docs)for(const a of doc.querySelectorAll("a[href]"))links.push(a.href);}
+    renderMessageBody(card,message,body||full.intro||"No readable text in this email.",links);
     button.textContent="Reload email";
-    if(!full.seen) authApi(state.mailbox,"/messages/"+encodeURIComponent(message.id),{method:"PATCH",body:JSON.stringify({seen:true})}).catch(()=>{});
+    if(!full.seen) authApi(state.mailbox,"/messages/"+encodeURIComponent(message.id),{method:"PATCH"}).catch(()=>{});
   } catch(error) { button.textContent="Read email"; status("Could not load email",String(error?.message||error)); }
   finally { button.disabled=false; }
 }
