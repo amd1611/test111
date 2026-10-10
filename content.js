@@ -15,7 +15,9 @@
     let s="";
     try { if(el.labels)s+=Array.from(el.labels).map(x=>x.innerText).join(" ")+" "; } catch {}
     const label=el.closest("label"); if(label)s+=" "+(label.innerText||"");
-    return s.toLowerCase();
+    const parent=el.parentElement;
+    if(parent&&parent.querySelectorAll("input,textarea,select").length<=1)s+=" "+(parent.innerText||"").slice(0,120);
+    return s.toLowerCase().replace(/[_-]+/g," ");
   };
   const setValue=(el,value) => {
     if(!el||value==null||String(value).trim()==="")return false;
