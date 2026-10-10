@@ -18,11 +18,20 @@
     return s.toLowerCase();
   };
   const setValue=(el,value) => {
-    if(!el||!value)return false;
+    if(!el||value==null||String(value).trim()==="")return false;
+    let target=String(value).trim();
+    if(el instanceof HTMLSelectElement){
+      const norm=s=>String(s).trim().toLowerCase().replace(/\s+/g," ");
+      const wanted=norm(target), options=Array.from(el.options).filter(o=>!o.disabled);
+      let match=options.find(o=>norm(o.value)===wanted||norm(o.textContent)===wanted);
+      if(!match&&wanted.length>=3)match=options.find(o=>norm(o.textContent).includes(wanted)||wanted.includes(norm(o.textContent)));
+      if(!match)return false;
+      target=match.value;
+    }
     const proto=el instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:el instanceof HTMLSelectElement?HTMLSelectElement.prototype:HTMLInputElement.prototype;
     const setter=Object.getOwnPropertyDescriptor(proto,"value")?.set;
     if(!setter)return false;
-    setter.call(el,value);el.dispatchEvent(new Event("input",{bubbles:true}));el.dispatchEvent(new Event("change",{bubbles:true}));return true;
+    setter.call(el,target);el.dispatchEvent(new Event("input",{bubbles:true}));el.dispatchEvent(new Event("change",{bubbles:true}));return true;
   };
   const verificationDetected=(fields) => {
     const fieldSignal=fields.some(el=>/one.?time|otp|verification.?code|auth.?code|phone.?code|captcha|recaptcha|hcaptcha|security.?challenge/.test(descriptors(el)+" "+labels(el)));
@@ -53,18 +62,40 @@
     try{
       const c=message.credentials||{}, best=bestForm();
       if(!best||!best.fields.length){sendResponse({ok:false,error:"No editable fields were found on this page."});return true;}
-      const textOf=el=>descriptors(el)+" "+labels(el);
-      const email=choose(best.fields,/email|e-mail/);
-      const user=choose(best.fields,/username|user name|login name|handle|nickname/);
-      const fullName=choose(best.fields,/(^|\s)(full.?name|display.?name|your name|first.?name|name)(\s|$)/);
+      const textOf=el=>(descriptors(el)+" "+labels(el)).toLowerCase().replace(/[_-]+/g," ").replace(/\s+/g," ");
+      const profile=c.profile||c;
+      const full=String(profile.displayName||c.displayName||"").trim();
+      const pieces=full.split(/\s+/).filter(Boolean);
+      const first=String(profile.firstName||pieces[0]||"").trim();
+      const last=String(profile.lastName||(pieces.length>1?pieces.slice(1).join(" "):"")).trim();
+      const filled=[];
+      const used=new Set();
+      const fill=(field,value,label)=>{
+        if(field&&value!=null&&String(value).trim()!==""&&setValue(field,value)){used.add(field);filled.push(label);return true;}
+        return false;
+      };
+      const email=best.fields.find(f=>!used.has(f)&&(f.type==="email"||/\bemail\b|e mail/.test(textOf(f))));
+      fill(email,c.email||profile.email,"email");
+      const firstName=best.fields.find(f=>!used.has(f)&&(/\bfirst name\b|\bgiven name\b|\bforename\b|autocomplete given name/.test(textOf(f))));
+      fill(firstName,first,"first name");
+      const lastName=best.fields.find(f=>!used.has(f)&&(/\blast name\b|\bfamily name\b|\bsurname\b|autocomplete family name/.test(textOf(f))));
+      fill(lastName,last,"last name");
+      const nameField=best.fields.find(f=>!used.has(f)&&(/\b(full name|display name|your name)\b|autocomplete name/.test(textOf(f))||(/\bname\b/.test(textOf(f))&&!/user.?name|first name|given name|last name|family name|surname|company|cardholder|account name/.test(textOf(f)))));
+      fill(nameField,full||[first,last].filter(Boolean).join(" "),"full name");
+      const age=best.fields.find(f=>!used.has(f)&&(/\bage\b|how old are you|years old|age in years/.test(textOf(f)))&&f.type!=="hidden"&&f.type!=="date");
+      fill(age,profile.age,"age");
+      const birthDate=best.fields.find(f=>!used.has(f)&&(/date of birth|birth date|birthdate|birthday|\bdob\b|autocomplete bday/.test(textOf(f))||f.type==="date"));
+      fill(birthDate,profile.birthDate,"date of birth");
+      const phone=best.fields.find(f=>!used.has(f)&&(f.type==="tel"||/phone number|mobile number|telephone number|phone|mobile|telephone/.test(textOf(f))));
+      fill(phone,profile.phone,"phone");
+      const country=best.fields.find(f=>!used.has(f)&&/country|country name|country code|nationality/.test(textOf(f)));
+      fill(country,profile.country,"country/region");
+      const user=best.fields.find(f=>!used.has(f)&&/user.?name|login name|handle|nickname|autocomplete username/.test(textOf(f)));
+      fill(user,c.username||profile.username,"username");
       const mainPassword=best.passwords.find(f=>/password/.test(textOf(f))&&!/confirm|repeat|re.?enter|current|old/.test(textOf(f)))||best.passwords[0];
       const confirmation=best.passwords.find(f=>f!==mainPassword&&/confirm|repeat|re.?enter/.test(textOf(f)));
-      const filled=[];
-      if(email&&c.email&&setValue(email,c.email))filled.push("email");
-      if(user&&setValue(user,c.username))filled.push("username");
-      if(fullName&&c.displayName&&setValue(fullName,c.displayName))filled.push("name");
-      if(mainPassword&&setValue(mainPassword,c.password))filled.push("password");
-      if(confirmation&&setValue(confirmation,c.password))filled.push("confirm password");
+      fill(mainPassword,c.password,"password");
+      fill(confirmation,c.password,"confirm password");
       const challenge=verificationDetected(best.fields);
       const confident=best.score>=2&&best.passwords.length>0;
       let submitted=false;
