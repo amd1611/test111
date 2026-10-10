@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Account Forge — Sign-up Assistant",
-  "version": "1.1.0",
-  "description": "Generate credentials, fill registration forms, and create/read a temporary email inbox.",
+  "version": "1.2.0",
+  "description": "Generate credentials, create a temporary inbox, and autofill common sign-up profile fields.",
   "permissions": [
     "activeTab",
     "scripting",
